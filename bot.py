@@ -2,8 +2,8 @@ import os
 import telebot
 
 # Load secrets
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = os.getenv("ADMIN_ID")
+BOT_TOKEN = os.getenv("7799355783:AAFn5k3dRB5813vY4TzS-uHCMM4u6nC-i1w")
+ADMIN_ID = os.getenv("6947378236")
 
 if not BOT_TOKEN:
     raise ValueError("BOT_TOKEN is missing! Please set it as a GitHub Secret.")
