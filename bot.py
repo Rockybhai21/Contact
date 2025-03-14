@@ -1,3 +1,7 @@
+"""
+This is a Telegram bot using Flask and Telebot.
+"""
+
 import os
 import telebot
 from flask import Flask, request
@@ -14,19 +18,24 @@ app = Flask(__name__)
 # Start Command
 @bot.message_handler(commands=['start'])
 def start(message):
-    user_id = message.from_user.id
-    bot.reply_to(message, f"Hello {message.from_user.first_name}! 👋\nI'm here to help you communicate easily.")
+    """Handles the /start command."""
+    bot.reply_to(
+        message, 
+        f"Hello {message.from_user.first_name}! 👋\n"
+        "I'm here to help you communicate easily."
+    )
 
 # Handle Messages
 @bot.message_handler(func=lambda message: True)
 def handle_messages(message):
-    user_id = message.from_user.id
+    """Handles user messages."""
     text = message.text
     bot.reply_to(message, f"📩 You said: {text}")
 
 # Admin Command: Broadcast Message
 @bot.message_handler(commands=['broadcast'])
 def broadcast(message):
+    """Handles admin broadcasting messages."""
     if str(message.from_user.id) not in ADMIN_IDS:
         bot.reply_to(message, "❌ You are not an admin!")
         return
@@ -41,6 +50,7 @@ def broadcast(message):
 # Webhook Endpoint
 @app.route(f"/{TOKEN}", methods=['POST'])
 def webhook():
+    """Handles incoming Telegram updates via webhook."""
     json_str = request.get_data().decode('UTF-8')
     update = telebot.types.Update.de_json(json_str)
     bot.process_new_updates([update])
@@ -49,10 +59,11 @@ def webhook():
 # Root Endpoint
 @app.route("/")
 def index():
+    """Returns bot status."""
     return "🤖 Bot is running!"
 
 # Set Webhook on Startup
 if __name__ == "__main__":
     bot.remove_webhook()
     bot.set_webhook(url=f"{APP_URL}/{TOKEN}")
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")))  # Fixed os.getenv default type issue
