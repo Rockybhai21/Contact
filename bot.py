@@ -2,76 +2,73 @@ import telebot
 import json
 import random
 import string
+import os
 
 TOKEN = "YOUR_BOT_TOKEN"
-ADMIN_ID = YOUR_ADMIN_TELEGRAM_ID  # Replace with the actual admin user ID
+ADMIN_ID = 123456789  # Replace with the actual Telegram user ID of the admin
 DATA_FILE = "messages.json"
 
 bot = telebot.TeleBot(TOKEN)
 
+
 # Load messages from file
 def load_messages():
-    try:
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
+    if os.path.exists(DATA_FILE):
+        with open(DATA_FILE, "r", encoding="utf-8") as file:
+            return json.load(file)
+    return {}
 
-# Save messages to a JSON file
+
+# Save messages to file
 def save_messages(data):
-    with open(DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(data, f, indent=4)
+    with open(DATA_FILE, "w", encoding="utf-8") as file:
+        json.dump(data, file, indent=4)
+
 
 # Generate a unique encrypted code
 def generate_encrypted_code():
     return ''.join(random.choices(string.digits, k=8))
 
+
 # Store user messages with unique encrypted code
-def store_message(user_id, message):
-    try:
-        with open(DATA_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        data = {}
-
+def store_message(user_id, text):
+    messages = load_messages()
     encrypted_code = generate_encrypted_code()
-    data[encrypted_code] = {"user_id": user_id, "message": message}
-
-    save_messages(data)
+    messages[encrypted_code] = {"user_id": user_id, "message": text}
+    save_messages(messages)
     return encrypted_code
 
-# Handle the start command
+
 @bot.message_handler(commands=["start"])
 def start(message):
+    """Handle /start command and show options"""
     markup = telebot.types.InlineKeyboardMarkup()
-    markup.add(telebot.types.InlineKeyboardButton("📩 Send Message", callback_data="send_message"))
-    markup.add(telebot.types.InlineKeyboardButton("📩 Receive Message", callback_data="receive_message"))
-    markup.add(telebot.types.InlineKeyboardButton(text="🔒 Password Protected Message", callback_data="password_protect"))
-    markup.add(telebot.types.InlineKeyboardButton("📊 Statistics", callback_data="stats"))
-
+    markup.add(telebot.types.InlineKeyboardButton("Send Message", callback_data="send_message"))
+    markup.add(telebot.types.InlineKeyboardButton("Retrieve Message", callback_data="retrieve_message"))
     bot.send_message(
-        message.chat.id, 
-        "💬 *Welcome to Anonymous Chat Bot!*\n\n"
-        "You can send anonymous messages to the admin or receive messages securely.\n\n"
-        "*Choose an option below:*",
-        parse_mode="Markdown",
-        reply_markup=markup
+        message.chat.id,
+        "💬 *Welcome to the Secret Chat Bot!*\n\n"
+        "You can send anonymous messages to the admin or retrieve a response using an encrypted code.\n\n"
+        "Choose an option below:",
+        parse_mode="Markdown", reply_markup=markup
     )
 
-# Handle inline buttons
-@bot.callback_query_handler(func=lambda call: True)
-def callback_query(call):
-    if call.data == "send_message":
-        msg = bot.send_message(call.message.chat.id, "✉️ *Send Me The Message*", parse_mode="Markdown")
-        bot.register_next_step_handler(msg, process_message)
-    elif call.data == "receive_message":
-        bot.send_message(call.message.chat.id, "📩 *Enter the encrypted code to retrieve your message:*", parse_mode="Markdown")
-        bot.register_next_step_handler(call.message, process_retrieve_message)
-    elif call.data == "stats":
-        bot.send_message(call.message.chat.id, "📊 *Bot Statistics:*\n\n👥 Total Users: *90*\n\n✌️ _Coded by_ @Bot_hub_telegram", parse_mode="Markdown")
 
-# Process user message
+# Handle button clicks
+@bot.callback_query_handler(func=lambda call: True)
+def handle_query(call):
+    """Handle inline button actions."""
+    if call.data == "send_message":
+        msg = bot.send_message(call.message.chat.id, "✉️ *Send me the message:*", parse_mode="Markdown")
+        bot.register_next_step_handler(msg, process_message)
+    elif call.data == "retrieve_message":
+        msg = bot.send_message(call.message.chat.id, "📩 *Enter the encrypted code to retrieve your message:*", parse_mode="Markdown")
+        bot.register_next_step_handler(msg, process_retrieve_message)
+
+
+# Process user message and send to admin
 def process_message(message):
+    """Store message and send encrypted code."""
     user_id = message.chat.id
     text = message.text.strip()
 
@@ -79,48 +76,98 @@ def process_message(message):
         bot.send_message(user_id, "❌ Message cannot be empty. Try again.")
         return
 
-    encrypted_code = generate_encrypted_code()
-    
-    data = load_messages()
-    data[encrypted_code] = {"user_id": user_id, "message": text}
-    save_messages(data)
-
-    bot.send_message(user_id, f"🔐 *Here Is Your Encrypted Code ➜* ❤️ `{encrypted_code}` ❤️", parse_mode="Markdown")
+    encrypted_code = store_message(user_id, text)
+    bot.send_message(user_id, f"✅ *Your message has been sent!*\n\n🔐 Your secret code: `{encrypted_code}`", parse_mode="Markdown")
     admin_text = f"📩 *New Anonymous Message!*\n\n💬 {text}\n\n📬 *Encrypted Code:* `{encrypted_code}`"
     bot.send_message(ADMIN_ID, admin_text, parse_mode="Markdown")
 
-# Retrieve messages
-@bot.message_handler(commands=["receive_message"])
-def receive_message_command(message):
-    markup = telebot.types.ForceReply(selective=True)
-    bot.send_message(
-        message.chat.id, 
-        "📨 *Send me the encrypted code you received:*", 
-        parse_mode="Markdown", reply_markup=markup
-    )
 
-@bot.message_handler(func=lambda message: message.reply_to_message is not None and "Enter the encrypted code" in message.reply_to_message.text)
-def retrieve_message(message):
+@bot.message_handler(commands=["reply"])
+def reply_message(message):
+    """Admin replies to a secret message using the encrypted code."""
+    if message.chat.id != ADMIN_ID:
+        bot.send_message(message.chat.id, "🚫 You are not authorized to use this command.")
+        return
+
+    msg = bot.send_message(ADMIN_ID, "✏️ *Enter the encrypted code:*", parse_mode="Markdown")
+    bot.register_next_step_handler(msg, get_code)
+
+
+def get_code(message):
+    """Ask for the encrypted code from admin."""
+    if message.chat.id != ADMIN_ID:
+        bot.send_message(message.chat.id, "🚫 You are not allowed to use this feature.")
+        return
+
     code = message.text.strip()
-
-    try:
-        with open(DATA_FILE, "r") as file:
-            data = json.load(file)
-    except (FileNotFoundError, json.JSONDecodeError):
-        data = {}
-
-    if code in data:
-        msg_text = data[code]["message"]
-        del data[code]
-        
-        with open(DATA_FILE, "w") as file:
-            json.dump(data, file)
-        
-        bot.send_message(message.chat.id, f"📩 *Your message:* {message.text}", parse_mode="Markdown")
-        bot.send_message(message.chat.id, f"💌 *Your Secret Message:*\n\n`{data.get(code, 'Message not found!')}`", parse_mode="Markdown")
+    messages = load_messages()
+    if code in messages:
+        user_info = messages[code]
+        user_id = user_info["user_id"]
+        bot.send_message(ADMIN_ID, f"💬 *Message:* {user_info['message']}\n\n✏️ *Reply with your message:*")
+        bot.register_next_step_handler(message, reply_to_user, user_id, code)
     else:
-        bot.send_message(message.chat.id, "❌ Invalid code. Please check again.")
+        bot.send_message(message.chat.id, "❌ Invalid code. No message found.")
 
-# Run bot in polling mode
-if __name__ == "__main__":
-    bot.polling(none_stop=True, timeout=30)
+
+def process_message(message):
+    """Process the message and store it with a unique code."""
+    user_id = message.chat.id
+    text = message.text.strip()
+
+    if not text:
+        bot.send_message(user_id, "❌ Message cannot be empty. Try again.")
+        return
+
+    encrypted_code = store_message(user_id, text)
+    bot.send_message(user_id, f"✅ *Message Sent!*\n\n📬 *Your Secret Code:* `{encrypted_code}`\n\n"
+                     "The admin will use this code to reply to your message.", parse_mode="Markdown")
+
+    admin_text = f"📩 *New Secret Message Received!*\n\n💬 `{text}`\n\n📌 *Encrypted Code:* `{encrypted_code}`\n\n"
+    bot.send_message(ADMIN_ID, admin_text, parse_mode="Markdown")
+
+
+@bot.message_handler(commands=["decrypt"])
+def decrypt_message(message):
+    """Retrieve the message using an encrypted code."""
+    msg = bot.send_message(message.chat.id, "🔓 *Enter the encrypted code to retrieve your message:*", parse_mode="Markdown")
+    bot.register_next_step_handler(msg, process_retrieve_message)
+
+
+def process_retrieve_message(message):
+    """Process encrypted code and send message to the user."""
+    code = message.text.strip()
+    messages = load_messages()
+
+    if code in messages:
+        user_id = messages[code]["user_id"]
+        message_text = messages[code]["message"]
+        bot.send_message(message.chat.id, f"💬 Message Found:\n\n`{message_text}`", parse_mode="Markdown")
+        bot.send_message(message.chat.id, "✏️ *Reply to this message to respond:*", parse_mode="Markdown")
+        bot.register_next_step_handler_by_chat_id(message.chat.id, send_reply, user_id, message_text)
+    else:
+        bot.send_message(message.chat.id, "❌ Invalid code. Please check and try again.")
+
+# Handle admin's reply
+def process_admin_reply(message):
+    reply_text = message.text.strip()
+    if not reply_text:
+        bot.send_message(message.chat.id, "❌ Reply cannot be empty.")
+        return
+    
+    encrypted_code = message.reply_to_message.text.split("`")[1]
+    messages = load_messages()
+
+    if code := messages.get(encrypted_code):
+        user_id = code["user_id"]
+        bot.send_message(user_id, f"📩 *Reply from Admin:*\n\n💬 {reply_text}", parse_mode="Markdown")
+        bot.send_message(message.chat.id, "✅ Your reply has been sent.")
+
+        # Delete message after sending
+        del messages[code]
+        save_messages(messages)
+    else:
+        bot.send_message(message.chat.id, "❌ Invalid code. Message not found.")
+
+# Start polling the bot
+bot.polling(none_stop=True)
