@@ -57,7 +57,6 @@ def handle_user_message(message):
     """
     user_id = message.chat.id
     user_name = message.from_user.first_name or "User"
-    
     if message.text:
         user_text = message.text
         sent_msg = bot.send_message(
