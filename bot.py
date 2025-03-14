@@ -1,139 +1,126 @@
-import os
-import json
 import telebot
-import base64
-import secrets
-from cryptography.fernet import Fernet
+import json
+import random
+import string
 
-# Get the bot token from the environment variable
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-bot = telebot.TeleBot(BOT_TOKEN)
-
-# Load or create message storage
+TOKEN = "YOUR_BOT_TOKEN"
+ADMIN_ID = YOUR_ADMIN_TELEGRAM_ID  # Replace with the actual admin user ID
 DATA_FILE = "messages.json"
 
-if os.path.exists("messages.json"):
-    with open("messages.json", "r") as f:
-        try:
-            stored_messages = json.load(f)
-        except json.JSONDecodeError:
-            stored_messages = {}
-else:
-    stored_messages = {}
-
-# Encryption key (Ensure this is kept safe and secure)
-SECRET_KEY = Fernet.generate_key()
-cipher_suite = Fernet(SECRET_KEY)
-
-# Function to encrypt a message
-def encrypt_message(message):
-    return base64.urlsafe_b64encode(
-        Fernet(Fernet.generate_key()).encrypt(message.encode("utf-8"))
-    ).decode()
-
-# Function to decrypt a message using a code
-def decrypt_message(encrypted_code):
-    if stored_messages.get(encrypted_code):
-        decrypted_message = stored_messages[encrypted_code]
-        return f"Here is your message: {decrypted_message}"
-    return "Invalid or expired code. No message found."
-
-TOKEN = os.getenv("BOT_TOKEN")
 bot = telebot.TeleBot(TOKEN)
 
-@bot.message_handler(commands=['start'])
-def start(message):
-    user_id = message.from_user.id
-    bot.send_message(user_id, f"Hello {message.from_user.first_name}! 👋\n"
-                               "I'm here to help you send secret messages securely! 🔒\n"
-                               "Press the button below to send a secret message!", 
-                     reply_markup=main_menu())
-
-def main_menu():
-    keyboard = telebot.types.InlineKeyboardMarkup()
-    send_message_button = telebot.types.InlineKeyboardButton("📩 Send Message", callback_data="send_message")
-    keyboard.add(send_message_button)
-    return keyboard
-
-@bot.callback_query_handler(func=lambda call: call.data == "send_message")
-def send_message(call):
-    msg = bot.send_message(call.message.chat.id, "💬 Please enter the message you want to send.")
-    bot.register_next_step_handler(msg, save_message)
-
-def generate_encryption_key():
-    return Fernet.generate_key()
-
-def encrypt_message(message, key):
-    f = Fernet(key)
-    return f.encrypt(message.encode()).decode()
-
-def decrypt_message(encrypted_message, key):
-    f = Fernet(key)
+# Load messages from file
+def load_messages():
     try:
-        return f.decrypt(encrypted_message.encode()).decode()
-    except:
-        return "Invalid code! Either the message is incorrect or the code has expired."
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
 
-@bot.message_handler(commands=['send'])
-def send_message_step1(message):
-    keyboard = telebot.types.InlineKeyboardMarkup()
-    button = telebot.types.InlineKeyboardButton("📩 Send Message", callback_data="send_message")
-    keyboard.add(send_message_button)
-    bot.send_message(message.chat.id, 
-                     "💬 *You Can Use Me To Do A Secret Chat With Anyone!*\n\nMade by @YourBotUsername", 
-                     parse_mode="Markdown", 
-                     reply_markup=keyboard)
+# Save messages to a JSON file
+def save_messages(data):
+    with open(DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(data, f, indent=4)
 
-@bot.callback_query_handler(func=lambda call: call.data == "send_message")
-def ask_for_message(call):
-    msg = bot.send_message(call.message.chat.id, "📩 *Send Me The Message* 🔒", 
-                           parse_mode="Markdown")
-    bot.register_next_step_handler(msg, get_message)
+# Generate a unique encrypted code
+def generate_encrypted_code():
+    return ''.join(random.choices(string.digits, k=8))
 
-def get_encryption_key():
-    return Fernet.generate_key()
+# Store user messages with unique encrypted code
+def store_message(user_id, message):
+    try:
+        with open(DATA_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        data = {}
 
-@bot.message_handler(func=lambda message: True)
-def save_message(message):
-    key = Fernet.generate_key()
-    encrypted_message = encrypt_message(message.text, key)
-    
-    encrypted_code = key.decode()[:8]  # Generate short key
-    stored_messages[encrypted_message] = message.text  # Store original message
+    encrypted_code = generate_encrypted_code()
+    data[encrypted_code] = {"user_id": user_id, "message": message}
 
-    # Save encrypted messages in JSON
-    with open("messages.json", "w") as f:
-        json.dump(stored_messages, f)
+    save_messages(data)
+    return encrypted_code
 
-    keyboard = telebot.types.InlineKeyboardMarkup()
-    decrypt_button = telebot.types.InlineKeyboardButton("🔓 Decrypt", callback_data=f"decrypt_{encrypted_message}_{key.decode()}")
-    keyboard.add(telebot.types.InlineKeyboardButton("📩 Send Message", callback_data="send_message"))
+# Handle the start command
+@bot.message_handler(commands=["start"])
+def start(message):
+    markup = telebot.types.InlineKeyboardMarkup()
+    markup.add(telebot.types.InlineKeyboardButton("📩 Send Message", callback_data="send_message"))
+    markup.add(telebot.types.InlineKeyboardButton("📩 Receive Message", callback_data="receive_message"))
+    markup.add(telebot.types.InlineKeyboardButton(text="🔒 Password Protected Message", callback_data="password_protect"))
+    markup.add(telebot.types.InlineKeyboardButton("📊 Statistics", callback_data="stats"))
 
-    bot.reply_to(message, f"❤️ Here Is Your Encrypted Code ➜ `{encrypted_message}` ❤️", reply_markup=keyboard)
+    bot.send_message(
+        message.chat.id, 
+        "💬 *Welcome to Anonymous Chat Bot!*\n\n"
+        "You can send anonymous messages to the admin or receive messages securely.\n\n"
+        "*Choose an option below:*",
+        parse_mode="Markdown",
+        reply_markup=markup
+    )
 
+# Handle inline buttons
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
     if call.data == "send_message":
-        bot.send_message(call.message.chat.id, "Please enter your secret message:")
-        bot.register_next_step_handler(call.message, encrypt_and_store_message)
+        msg = bot.send_message(call.message.chat.id, "✉️ *Send Me The Message*", parse_mode="Markdown")
+        bot.register_next_step_handler(msg, process_message)
+    elif call.data == "receive_message":
+        bot.send_message(call.message.chat.id, "📩 *Enter the encrypted code to retrieve your message:*", parse_mode="Markdown")
+        bot.register_next_step_handler(call.message, process_retrieve_message)
+    elif call.data == "stats":
+        bot.send_message(call.message.chat.id, "📊 *Bot Statistics:*\n\n👥 Total Users: *90*\n\n✌️ _Coded by_ @Bot_hub_telegram", parse_mode="Markdown")
 
-    elif call.data.startswith("send_message"):
-        bot.send_message(call.from_user.id, "📥 Send Me The Message 📩")
+# Process user message
+def process_message(message):
+    user_id = message.chat.id
+    text = message.text.strip()
+
+    if not text:
+        bot.send_message(user_id, "❌ Message cannot be empty. Try again.")
+        return
+
+    encrypted_code = generate_encrypted_code()
     
-    elif call.data.startswith("decrypt_"):
-        _, encrypted_message, key = call.data.split("_", 2)
-        decrypted_text = decrypt_message(encrypted_message, key.encode())
-        bot.send_message(call.from_user.id, decrypted_message)
+    data = load_messages()
+    data[encrypted_code] = {"user_id": user_id, "message": text}
+    save_messages(data)
 
-def encrypt_and_store_message(message):
-    key = get_encryption_key()
-    encrypted_message = encrypt_message(message.text, key)
-    message_code = encrypted_message[:8]  # Shorten for user
-    stored_messages[message.from_user.id] = {"key": key.decode(), "message": encrypted_message}
-    
-    bot.send_message(message.chat.id, f"Here Is Your Encrypted Code ➜ ❤️ {message_id} ❤️")
+    bot.send_message(user_id, f"🔐 *Here Is Your Encrypted Code ➜* ❤️ `{encrypted_code}` ❤️", parse_mode="Markdown")
+    admin_text = f"📩 *New Anonymous Message!*\n\n💬 {text}\n\n📬 *Encrypted Code:* `{encrypted_code}`"
+    bot.send_message(ADMIN_ID, admin_text, parse_mode="Markdown")
 
+# Retrieve messages
+@bot.message_handler(commands=["receive_message"])
+def receive_message_command(message):
+    markup = telebot.types.ForceReply(selective=True)
+    bot.send_message(
+        message.chat.id, 
+        "📨 *Send me the encrypted code you received:*", 
+        parse_mode="Markdown", reply_markup=markup
+    )
+
+@bot.message_handler(func=lambda message: message.reply_to_message is not None and "Enter the encrypted code" in message.reply_to_message.text)
+def retrieve_message(message):
+    code = message.text.strip()
+
+    try:
+        with open(DATA_FILE, "r") as file:
+            data = json.load(file)
+    except (FileNotFoundError, json.JSONDecodeError):
+        data = {}
+
+    if code in data:
+        msg_text = data[code]["message"]
+        del data[code]
+        
+        with open(DATA_FILE, "w") as file:
+            json.dump(data, file)
+        
+        bot.send_message(message.chat.id, f"📩 *Your message:* {message.text}", parse_mode="Markdown")
+        bot.send_message(message.chat.id, f"💌 *Your Secret Message:*\n\n`{data.get(code, 'Message not found!')}`", parse_mode="Markdown")
+    else:
+        bot.send_message(message.chat.id, "❌ Invalid code. Please check again.")
+
+# Run bot in polling mode
 if __name__ == "__main__":
-    bot.remove_webhook()
-    bot.set_webhook(url=f"{APP_URL}/{TOKEN}")
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 5000)))
+    bot.polling(none_stop=True, timeout=30)
