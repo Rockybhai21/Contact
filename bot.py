@@ -4,9 +4,26 @@ import random
 import string
 import os
 
-TOKEN = "7799355783:AAFn5k3dRB5813vY4TzS-uHCMM4u6nC-i1w"
-ADMIN_ID = 6947378236  # Replace with the actual Telegram user ID of the admin
 DATA_FILE = "messages.json"
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = os.getenv("ADMIN_ID")
+
+if not BOT_TOKEN:
+    raise ValueError("BOT_TOKEN is missing! Please set it as a GitHub Secret.")
+
+if not ADMIN_ID:
+    raise ValueError("ADMIN_ID is missing! Please set it as a GitHub Secret.")
+
+ADMIN_ID = int(ADMIN_ID)  # Ensure it's an integer
+
+bot = telebot.TeleBot(BOT_TOKEN)
+
+# Test bot startup
+try:
+    me = bot.get_me()
+    print(f"Bot is running: {me.first_name} (@{me.username})")
+except Exception as e:
+    print("Error:", e)
 
 bot = telebot.TeleBot(TOKEN)
 
