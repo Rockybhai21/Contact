@@ -4,8 +4,8 @@ import random
 import string
 import os
 
-TOKEN = "YOUR_BOT_TOKEN"
-ADMIN_ID = 123456789  # Replace with the actual Telegram user ID of the admin
+TOKEN = "7799355783:AAFn5k3dRB5813vY4TzS-uHCMM4u6nC-i1w"
+ADMIN_ID = 6947378236  # Replace with the actual Telegram user ID of the admin
 DATA_FILE = "messages.json"
 
 bot = telebot.TeleBot(TOKEN)
